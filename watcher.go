@@ -22,7 +22,7 @@ func main() {
 
 
     defaultHeaders := map[string]string{"User-Agent": "engine-api-cli-1.0"}
-    client, err := client.NewClient("unix:///var/run/docker.sock", "v1.21", nil, defaultHeaders)
+    client, err := client.NewClient("unix:///var/run/docker.sock", "", nil, defaultHeaders)
     if err != nil {
         panic(err)
     }
