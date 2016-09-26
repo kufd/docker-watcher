@@ -55,7 +55,7 @@ func parseArgs() (imageLifetime int64, containerLifetime int64, keepImages []str
       --containerLifetime=<seconds>  Container lifetime [default: 259200](3 days).
       --watchInterval=<seconds>  Pause duration between checking docker status [default: 600](10 minutes).`
 
-    programmArguments, err := docopt.Parse(usage, nil, true, "Docker Watcher 0.0.1", false)
+    programmArguments, err := docopt.Parse(usage, nil, true, "Docker Watcher 0.0.2", false)
     if err != nil {
         panic(err)
     }
@@ -93,14 +93,12 @@ func removeOldImages(client *client.Client, keepImages []string, imageLifetime i
         remove := false;
 
         //remove images by lifetime
-        if currentTime < image.Created + imageLifetime {
+        if currentTime > image.Created + imageLifetime {
             remove = true;
         }
 
-        //remove only images which are not parent images for other images
-        if (!isParentImage(image, images)) {
-            remove = true;
-        } else {
+        //keep images which are arent images for other images
+        if isParentImage(image, images) {
             remove = false;
         }
 
