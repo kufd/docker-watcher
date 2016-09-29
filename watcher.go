@@ -18,8 +18,6 @@ func main() {
     log.Println("Docker watcher started.");
 
     imageLifetime, containerLifetime, keepImages, watchInterval := parseArgs();
-    currentTime := time.Now().Unix()
-
 
     defaultHeaders := map[string]string{"User-Agent": "engine-api-cli-1.0"}
     client, err := client.NewClient("unix:///var/run/docker.sock", "", nil, defaultHeaders)
@@ -28,6 +26,8 @@ func main() {
     }
 
     for {
+        currentTime := time.Now().Unix()
+
         fmt.Println("");
         removeOldContainers(client, containerLifetime, currentTime);
         fmt.Println("");
@@ -53,7 +53,7 @@ func parseArgs() (imageLifetime int64, containerLifetime int64, keepImages []str
       --keepImage=<image name>  Image to keep on host.
       --imageLifetime=<seconds>  Image lifetime [default: 259200](3 days).
       --containerLifetime=<seconds>  Container lifetime [default: 259200](3 days).
-      --watchInterval=<seconds>  Pause duration between checking docker status [default: 600](10 minutes).`
+      --watchInterval=<seconds>  Pause duration between checking docker status [default: 3600](1 hour).`
 
     programmArguments, err := docopt.Parse(usage, nil, true, "Docker Watcher 0.0.2", false)
     if err != nil {
@@ -97,7 +97,7 @@ func removeOldImages(client *client.Client, keepImages []string, imageLifetime i
             remove = true;
         }
 
-        //keep images which are arent images for other images
+        //keep images which are parent images for other images
         if isParentImage(image, images) {
             remove = false;
         }
@@ -122,10 +122,12 @@ func removeOldImages(client *client.Client, keepImages []string, imageLifetime i
     }
 
     if len(imagesToRemove) > 0 {
+        counter := 0;
         for _, image := range imagesToRemove {
             _, found := imagesRemoved[image.ID]
             if !found {
-                log.Println(image.RepoTags, " - ", image.ID, " ...");
+                counter++;
+                printImageInfo(image, counter);
                 justImagesRemoved, err := client.ImageRemove(context.Background(), image.ID, types.ImageRemoveOptions{Force: true, PruneChildren: true});
                 if err != nil {
                     panic(err)
@@ -134,8 +136,6 @@ func removeOldImages(client *client.Client, keepImages []string, imageLifetime i
                 for _, justImageRemoves := range justImagesRemoved {
                     imagesRemoved[justImageRemoves.Deleted] = justImageRemoves.Deleted;
                 }
-
-                log.Println("REMOVED");
             }
         }
     } else {
@@ -169,19 +169,40 @@ func removeOldContainers(client *client.Client, containerLifetime int64, current
     }
 
     if (len(containersToRemove) > 0) {
+        counter := 0;
         for _, container := range containersToRemove {
-            log.Println(container.Names, " - ", container.ID, " ...");
+            counter++;
+            printContainerInfo(container, counter);
             err := client.ContainerRemove(context.Background(), container.ID, types.ContainerRemoveOptions{RemoveVolumes: true, Force: true});
             if err != nil {
                 panic(err)
             }
-            log.Println("REMOVED");
         }
     } else {
         log.Println("No containers to remove found.");
     }
 
     log.Println("Containers removing finished.");
+}
+
+func printContainerInfo(container types.Container, containerNumber int) {
+    containerInfo := "  id: " + container.ID + "\n";
+    containerInfo += "  names:\n";
+    for _, name := range container.Names {
+        containerInfo += "    - " + name + "\n";
+    }
+
+    log.Printf("Container #%v\n%v", containerNumber, containerInfo);
+}
+
+func printImageInfo(image types.Image, imageNumber int) {
+    imageInfo := "  id: " + image.ID + "\n";
+    imageInfo += "  tags:\n";
+    for _, repoTag := range image.RepoTags {
+        imageInfo += "    - " + repoTag + "\n";
+    }
+
+    log.Printf("Image #%v\n%v", imageNumber, imageInfo);
 }
 
 func isParentImage(image types.Image, images []types.Image) bool {
