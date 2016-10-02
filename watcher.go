@@ -17,7 +17,7 @@ import (
 func main() {
     log.Println("Docker watcher started.");
 
-    imageLifetime, containerLifetime, keepImages, watchInterval := parseArgs();
+    imageLifetime, containerLifetime, keepImages, keepContainers, watchInterval := parseArgs();
 
     defaultHeaders := map[string]string{"User-Agent": "engine-api-cli-1.0"}
     client, err := client.NewClient("unix:///var/run/docker.sock", "", nil, defaultHeaders)
@@ -29,7 +29,7 @@ func main() {
         currentTime := time.Now().Unix()
 
         fmt.Println("");
-        removeOldContainers(client, containerLifetime, currentTime);
+        removeOldContainers(client, keepContainers, containerLifetime, currentTime);
         fmt.Println("");
         removeOldImages(client, keepImages, imageLifetime, currentTime);
 
@@ -39,11 +39,11 @@ func main() {
     log.Println("Docker watcher stopped.");
 }
 
-func parseArgs() (imageLifetime int64, containerLifetime int64, keepImages []string, watchInterval int64) {
+func parseArgs() (imageLifetime int64, containerLifetime int64, keepImages []string, keepContainers []string, watchInterval int64) {
     usage := `Docker Watcher.
 
     Usage:
-      watcher [--keepImage=<image name>]... [--imageLifetime=<seconds>] [--containerLifetime=<seconds>] [--watchInterval=<seconds>]
+      watcher [--keepImage=<image name>]... [--keepContainer=<container name>]... [--imageLifetime=<seconds>] [--containerLifetime=<seconds>] [--watchInterval=<seconds>]
       watcher --version
 
 
@@ -51,6 +51,7 @@ func parseArgs() (imageLifetime int64, containerLifetime int64, keepImages []str
       -h --help     Show this screen.
       -v --version     Show version.
       --keepImage=<image name>  Image to keep on host.
+      --keepContainer=<container name>  Container to keep on host.
       --imageLifetime=<seconds>  Image lifetime [default: 259200](3 days).
       --containerLifetime=<seconds>  Container lifetime [default: 259200](3 days).
       --watchInterval=<seconds>  Pause duration between checking docker status [default: 3600](1 hour).`
@@ -73,11 +74,12 @@ func parseArgs() (imageLifetime int64, containerLifetime int64, keepImages []str
         panic(err)
     }
 
-    keepImages, _ = programmArguments["--keepImages"].([]string);
+    keepImages, _ = programmArguments["--keepImage"].([]string);
+    keepContainers, _ = programmArguments["--keepContainer"].([]string);
 
-    log.Printf("Parameters:\n imageLifetime: %v \n containerLifetime: %v \n keepImages: %v \n watchInterval: %v", imageLifetime, containerLifetime, keepImages, watchInterval);
+    log.Printf("Parameters:\n imageLifetime: %v \n containerLifetime: %v \n keepImages: %v \n keepContainers: %v \n watchInterval: %v", imageLifetime, containerLifetime, keepImages, keepContainers, watchInterval);
 
-    return imageLifetime, containerLifetime, keepImages, watchInterval;
+    return imageLifetime, containerLifetime, keepImages, keepContainers, watchInterval;
 }
 
 func removeOldImages(client *client.Client, keepImages []string, imageLifetime int64, currentTime int64)  {
@@ -145,13 +147,15 @@ func removeOldImages(client *client.Client, keepImages []string, imageLifetime i
     log.Println("Images removing finished.");
 }
 
-func removeOldContainers(client *client.Client, containerLifetime int64, currentTime int64)  {
+func removeOldContainers(client *client.Client, keepContainers  []string, containerLifetime int64, currentTime int64)  {
     containers := getAllContainers(client);
     var containersToRemove []types.Container;
 
     log.Println("Going to remove unused containers.");
     for _, container := range containers {
-        if "Exited" == container.Status[0:6] {
+        remove := false;
+
+        if "Exited" == container.Status[0:6] || "Created" == container.Status[0:7] {
             containerInfo, err := client.ContainerInspect(context.Background(), container.ID);
             if err != nil {
                 panic(err)
@@ -163,8 +167,21 @@ func removeOldContainers(client *client.Client, containerLifetime int64, current
             }
 
             if finishedAt.Unix() + containerLifetime < currentTime {
-                containersToRemove = append(containersToRemove, container)
+                remove = true;
             }
+        }
+
+        //do not remove container from keepContainers list
+        for _, name := range container.Names {
+            for _, keepContainer := range keepContainers {
+                if  strings.Trim(name, "/") ==  strings.Trim(keepContainer, "/") {
+                    remove = false;
+                }
+            }
+        }
+
+        if (remove) {
+            containersToRemove = append(containersToRemove, container);
         }
     }
 
