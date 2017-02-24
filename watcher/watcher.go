@@ -108,6 +108,7 @@ func RemoveOldImages(client *client.Client, keepImages []string, imageLifetime i
     var imagesToRemove []types.ImageSummary;
     imagesRemoved := make(map[string]string);
     images := getAllImages(client);
+    containers := getAllContainers(client);
 
     log.Println("Going to remove unused images with their child images.");
 
@@ -134,9 +135,10 @@ func RemoveOldImages(client *client.Client, keepImages []string, imageLifetime i
         }
 
         //keep images which have existed containers
-        if image.Containers > 0 {
+        if isContainerFromImageExists(image, containers) {
             remove = false;
         }
+
 
         if remove {
             imagesToRemove = append(imagesToRemove, image)
@@ -220,6 +222,19 @@ func RemoveOldContainers(client *client.Client, keepContainers  []string, contai
     }
 
     log.Println("Containers removing finished.");
+}
+
+func isContainerFromImageExists(image types.ImageSummary, containers []types.Container) bool {
+    result := false;
+
+    for _, container := range containers {
+        if (image.ID == container.ImageID) {
+            result = true;
+            break;
+        }
+    }
+
+    return result;
 }
 
 func printContainerInfo(container types.Container, containerNumber int) {
